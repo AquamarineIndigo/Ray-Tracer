@@ -2,9 +2,9 @@
 
 # Summer-Ray-Tracer
 
-##Ray Tracing project for course Principles and Practice of Computer Algorithms
+## Ray Tracing project for course Principles and Practice of Computer Algorithms
 
-##Original Introduction as below:
+## Original Introduction as below:
 
 SJTU ACM Honor Class 2023 Ray Tracer Project With Rust !
 
