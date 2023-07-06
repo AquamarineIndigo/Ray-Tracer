@@ -1,126 +1,167 @@
-// use std::intrinsics::{sqrtf64, float_to_int_unchecked};
-// use std::io;
+pub mod basic;
+pub mod object;
+use basic::vec3::{Vec3, vec3_add, /*vec3_dot,*/ vec3_mul, /*vec3_sub,*/ vec3_tri_add, generate_unit_vector, random_in_unit_sphere};
+use basic::ray::Ray;
+use basic::camera;
+use object::basic::vec3::vec3_sub;
+// use object::basic::vec3::vec3_tri_add;
+use object::hittable::{HitRecord, Hittable};
+use object::sphere::Sphere;
+use object::hittable_list::{HittableList, Objects};
 use console::style;
 use image::{ImageBuffer, RgbImage};
-// use indicatif::ProgressBar;
+// use rand::random;
+extern crate rayon;
+use rayon::prelude::*;
+use indicatif::ProgressBar;
 use std::{fs::File, process::exit};
-// use std::num;
-// use core::ops::Add;
-// use core::ops::Mul;
 
-struct Vec3 {
-	x_dir: f64,
-	y_dir: f64,
-	z_dir: f64,
-}
+use crate::basic::camera::Camera;
+use crate::basic::random_double;
 
-fn vec3_add(a: &Vec3, b: &Vec3) -> Vec3 {
-	Vec3 {
-		x_dir: a.x_dir + b.x_dir,
-		y_dir: a.y_dir + b.y_dir,
-		z_dir: a.z_dir + b.z_dir,
+// fn get_colour(r: &Ray, world: &Objects) -> Vec3 {
+// 	let mut rec = HitRecord::new();
+// 	match world {
+// 		Objects::SphereShape(w) => {
+// 			if w.hit(&r, &0.0, &basic::INFINITY, &mut rec) == true {
+// 				return vec3_mul(&0.5, &vec3_add(&rec.normal, &Vec3::set(1.0, 1.0, 1.0)));
+// 			}
+// 		}
+// 		Objects::List(w) => {
+// 			if w.hit(&r, &0.0, &basic::INFINITY, &mut rec) == true {
+// 				return vec3_mul(&0.5, &vec3_add(&rec.normal, &Vec3::set(1.0, 1.0, 1.0)));
+// 			}
+// 		}
+// 	}
+// 	let unit_direction = generate_unit_vector(&r.direction);
+// 	let t: f64 = 0.5 * (unit_direction.y_dir + 1.0);
+// 	vec3_add(&vec3_mul(&(1.0 - t), &Vec3::set(1.0, 1.0, 1.0)), &vec3_mul(&t, &Vec3::set(0.5, 0.7, 1.0)))
+// }
+fn get_colour(r: &Ray, world: &HittableList, depth: &i32) -> Vec3 {
+	if *depth < 0 {
+		return Vec3::set(0.0, 0.0, 0.0);
 	}
-}
-fn vec3_mul(a: &f64, b: &Vec3) -> Vec3 {
-	Vec3 {
-		x_dir: a * b.x_dir,
-		y_dir: a * b.y_dir,
-		z_dir: a * b.z_dir,
+	let mut rec = HitRecord::new();
+	if world.hit(&r, &0.0, &basic::INFINITY, &mut rec) == true {
+		let target: Vec3 = vec3_tri_add(&rec.p, &rec.normal, &random_in_unit_sphere());
+		// return vec3_mul(&0.5, &vec3_add(&rec.normal, &Vec3::set(1.0, 1.0, 1.0)));
+		return vec3_mul(&0.5, &get_colour(
+			&Ray::set(rec.p, vec3_sub(&target, &rec.p)), 
+			&world, &(depth - 1))
+		);
 	}
-}
-fn vec3_tri_add(a: &Vec3, b: &Vec3, c: &Vec3) -> Vec3 {
-	Vec3 {
-		x_dir: a.x_dir + b.x_dir + c.x_dir,
-		y_dir: a.y_dir + b.y_dir + c.y_dir,
-		z_dir: a.z_dir + b.z_dir + c.z_dir,
-	}
-}
-
-impl Vec3 {
-	// fn set(self, x: &f64, y: &f64, z: &f64) -> Vec3 {
-	// 	Vec3 {
-	// 		x_dir: *x,
-	// 		y_dir: *y,
-	// 		z_dir: *z,
-	// 	}
-	// }
-	fn clone(self: &Self) -> Vec3 {
-		Vec3 {
-			x_dir: self.x_dir,
-			y_dir: self.y_dir,
-			z_dir: self.z_dir,
-		}
-	}
+	let unit_direction = generate_unit_vector(&r.direction);
+	let t: f64 = 0.5 * (unit_direction.y_dir + 1.0);
+	vec3_add(&vec3_mul(&(1.0 - t), &Vec3::set(1.0, 1.0, 1.0)), &vec3_mul(&t, &Vec3::set(0.5, 0.7, 1.0)))
 }
 
-fn generate_unit_vector(direction: &Vec3) -> Vec3 {
-	let l_sqr = direction.x_dir.powi(2) + direction.y_dir.powi(2) + direction.z_dir.powi(2);
-	let l = l_sqr.sqrt();
-	Vec3 {
-		x_dir: direction.x_dir / l,
-		y_dir: direction.y_dir / l,
-		z_dir: direction.z_dir / l,
+#[derive(Copy, Clone)]
+struct Mem {
+	i: u32,
+	j: u32,
+	lr: u8,
+	lg: u8,
+	lb: u8,
+}
+
+impl Mem {
+	fn new() -> Self {
+		Mem { i: 0, j: 0, lr: 0, lg: 0, lb: 0 }
 	}
 }
 
-struct Ray {
-	direction: Vec3,
-	origin: Vec3,
-}
-
-impl Ray {
-	fn set(origin: Vec3, direction: Vec3) -> Self{
-		Ray {
-			direction, //: direction.clone(),
-			origin, //: origin.clone(),
-		}
-	}
-
-	// fn point_at_parameter(self: &Self, t: &f64) -> Vec3 {
-	// 	// self.origin + (self.direction * t)
-	// 	vec3_add(&self.origin, &vec3_mul(&t, &self.direction))
-	// }
-}
-
-fn get_colour(r: &Ray) -> Vec3 {
-	let unit_vector = generate_unit_vector(&r.direction);
-	let t = 0.5 * (unit_vector.y_dir + 1.0);
-	let para1: Vec3 = Vec3 {x_dir: 1.0, y_dir: 1.0, z_dir: 1.0};
-	let para2: Vec3 = Vec3 {x_dir: 0.5, y_dir: 0.7, z_dir: 1.0};
-	// (1.0 - t) * para1 + t * para2
-	vec3_add(&vec3_mul(&(1.0 - t), &para1), &vec3_mul(&t, &para2))
+fn get_id(i: &u32, j: &u32, width: &u32) -> usize {
+	(j * width + i) as usize
 }
 
 fn main() {
-	let path = "output/book1/image1-2.jpg";
-	let height = 128;
-	let width = 256;
+	let path = "output/book1/image1-7.jpg";
+	// let width: u32 = 800;
+	const WIDTH: u32 = 1024;
 	let quality = 255;
-	let mut img: RgbImage = ImageBuffer::new(width, height);
+	// let aspect_ratio: f64 = 16.0 / 9.0;
+	const ASPECTRATIO: f64 = 16.0 / 9.0;
+	// let height: u32 = ((width as f64) / aspect_ratio) as u32;
+	const HEIGHT: u32 = ((WIDTH as f64) / ASPECTRATIO) as u32;
+	let sample_per_pixel = 100;
+	let mut img: RgbImage = ImageBuffer::new(WIDTH, HEIGHT);
+	let max_depth = 50;
 
-	let lower_left_corner = Vec3 {x_dir: -2.0, y_dir: -1.0, z_dir: -1.0};
-	let horizontal = Vec3 {x_dir: 4.0, y_dir: 0.0, z_dir: 0.0};
-	let vertical = Vec3 {x_dir: 0.0, y_dir: 2.0, z_dir: 0.0};
-	let origin = Vec3 {x_dir: 0.0, y_dir: 0.0, z_dir: 0.0};
+	let mut world = HittableList { objects: Vec::new() };
+	world.add(Objects::SphereShape(Sphere { center: Vec3::set(0.0, 0.0, -1.0), radius: 0.5 }));
+	world.add(Objects::SphereShape(Sphere { center: Vec3::set(0.0, -100.5, -1.0 ), radius: 100.0 }));
 
-	for j in 0..height { // rev?
-		for i in 0..width {
-			let u = (i as f64) / (width as f64);
-			let v = (j as f64) / (height as f64);
-			// let dir = 
-			let r = Ray::set(
-				origin.clone(), 
-				vec3_tri_add(&lower_left_corner, &vec3_mul(&u, &horizontal), &vec3_mul(&v, &vertical)).clone(),
-			);
-			let pixel = img.get_pixel_mut(i, height - j - 1);
-			let colour = get_colour(&r);
-			let ir: f64 = 255.99 * colour.x_dir;
-			let ig: f64 = 255.99 * colour.y_dir;
-			let ib: f64 = 255.99 * colour.z_dir;
-			*pixel = image::Rgb([ir as u8, ig as u8, ib as u8]);
-			// println!("Position: (x: {i}, y: {j})");
+	let progress = if option_env!("CI").unwrap_or_default() == "true" {
+		ProgressBar::hidden()
+	} else {
+		ProgressBar::new((HEIGHT * WIDTH) as u64)
+	};
+
+	let cam: Camera = Camera::new();
+
+	// for j in 0..height { // rev?
+	// 	for i in 0..width {
+	// 		let pixel = img.get_pixel_mut(i, height - j - 1);
+	// 		let mut pixel_colour = Vec3::set(0.0, 0.0, 0.0);
+	// 		for _s in 0..sample_per_pixel {
+	// 			let u = (i as f64 + random_double()) / ((width - 1) as f64);
+	// 			let v = (j as f64 + random_double()) / ((height - 1) as f64);
+	// 			let r: Ray = cam.get_ray(&u, &v);
+	// 			pixel_colour = vec3_add(&pixel_colour, &get_colour(&r, &world.clone(), &max_depth));
+	// 		}
+	// 		let mut arr = [0; 3];
+	// 		arr[..].copy_from_slice(&camera::write_colour(&pixel_colour, &sample_per_pixel)[..3]);
+	// 		*pixel = image::Rgb(arr);
+	// 		// println!("Position: (x: {i}, y: {j})");
+	// 		progress.inc(1);
+	// 	}
+	// }
+
+	// for j in 0..height { // rev?
+	// 	for i in 0..width {
+	// let _pix: Vec<_> = 
+	let mut pixel_rgb = [Mem::new(); ((HEIGHT * WIDTH) as usize)];
+	for i in 0..WIDTH {
+		for j in 0..HEIGHT {
+			pixel_rgb[get_id(&i, &j, &WIDTH)].i = i as u32;
+			pixel_rgb[get_id(&i, &j, &WIDTH)].j = j as u32;
 		}
 	}
+	pixel_rgb.par_iter_mut()
+		.for_each(|p: &mut Mem| {
+			// let i: u32 = index % width;
+			// let j: u32 = index / width;
+			// let pixel = img.get_pixel_mut(i, height - j - 1);
+			let i: u32 = p.i;
+			let j: u32 = p.j;
+			let mut pixel_colour = Vec3::set(0.0, 0.0, 0.0);
+			for _s in 0..sample_per_pixel {
+				let u = (i as f64 + random_double()) / ((WIDTH - 1) as f64);
+				let v = (j as f64 + random_double()) / ((HEIGHT - 1) as f64);
+				let r: Ray = cam.get_ray(&u, &v);
+				pixel_colour = vec3_add(&pixel_colour, &get_colour(&r, &world.clone(), &max_depth));
+			}
+			let mut arr = [0; 3];
+			arr[..].copy_from_slice(&camera::write_colour(&pixel_colour, &sample_per_pixel)[..3]);
+			// *pixel = image::Rgb(arr);
+			// pixel_rgb[i as usize][j as usize][..].copy_from_slice(&camera::write_colour(&pixel_colour, &sample_per_pixel)[..3]);
+			// println!("Position: (x: {i}, y: {j})");
+			[p.lr, p.lg, p.lb] = arr;
+			progress.inc(1);
+		});
+		// .collect();
+	
+	for i in 0..WIDTH {
+		for j in 0..HEIGHT {
+			*img.get_pixel_mut(i, HEIGHT - j - 1) = 
+				image::Rgb([
+					pixel_rgb[get_id(&i, &j, &WIDTH)].lr, 
+					pixel_rgb[get_id(&i, &j, &WIDTH)].lg, 
+					pixel_rgb[get_id(&i, &j, &WIDTH)].lb
+				]);
+		}
+	}
+	progress.finish();
 	println!("Output image is in \"{}\"", style(path).green());
 	let output_image = image::DynamicImage::ImageRgb8(img);
 	let mut output_file = File::create(path).unwrap();
